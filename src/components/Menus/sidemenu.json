@@ -1,0 +1,17 @@
+[
+    {
+        "name": "主页",
+        "route": "/",
+        "icon": "home"
+    },
+    {
+        "name": "搜索",
+        "route": "/search",
+        "icon": "search"
+    },
+    {
+        "name": "歌库",
+        "route": "/collection",
+        "icon": "book"
+    }
+]
