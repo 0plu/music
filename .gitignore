@@ -12,6 +12,7 @@ node_modules
 dist
 dist.zip
 dist-ssr
+/public
 coverage
 *.local
 
@@ -27,3 +28,5 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+public/
+dist/
