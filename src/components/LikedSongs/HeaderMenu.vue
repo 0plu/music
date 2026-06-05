@@ -9,15 +9,15 @@ const { likedSongs } = storeToRefs(store);
 <template>
     <div class="bg-gradient-to-b from-indigo-700 to-background">
         <HeaderGenericVue />
-        <div class="flex flex-row flex-wrap gap-5 mt-5 p-4">
+        <div class="mt-5 flex min-w-0 flex-col gap-4 p-4 xs:flex-row xs:flex-wrap xs:gap-5">
             <img
                 src="@/assets/liked.png"
                 alt="Liked"
-                class="rounded w-60 h-60"
+                class="h-40 w-40 self-center rounded object-cover xs:h-60 xs:w-60 xs:self-auto"
             />
-            <div class="flex flex-col justify-end">
+            <div class="flex min-w-0 flex-col justify-end">
                 <span class="font-bold text-lg">Playlist</span>
-                <h1 class="font-extrabold text-6xl">Liked Songs</h1>
+                <h1 class="break-words text-3xl font-extrabold xs:text-6xl">Liked Songs</h1>
                 <p class="text-sm mt-2">
                     {{ likedSongs.length }} songs are listed here.
                 </p>

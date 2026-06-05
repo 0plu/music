@@ -3,7 +3,7 @@ import HeaderMenuVue from "@/components/Library/HeaderMenu.vue";
 import SongListVue from "@/components/Library/SongList.vue";
 </script>
 <template>
-    <div class="flex flex-col w-full">
+    <div class="flex min-w-0 flex-1 flex-col">
         <header>
             <HeaderMenuVue />
         </header>

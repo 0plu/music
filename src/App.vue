@@ -41,7 +41,9 @@ window.addEventListener("beforeunload", () => {
 <template>
     <div class="flex flex-row text-white">
         <SideMenuVue />
-        <RouterView class="bg-background min-h-screen text-base pb-20" />
+        <RouterView
+            class="min-h-screen min-w-0 max-w-[calc(100vw-4rem)] flex-1 overflow-x-hidden bg-background pb-32 text-base xs:max-w-[calc(100vw-10rem)] xs:pb-28"
+        />
         <AlertGenericVue />
         <SongControlFooterVue v-if="activeSongId !== 0" />
     </div>

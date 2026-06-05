@@ -12,7 +12,7 @@ node_modules
 dist
 dist.zip
 dist-ssr
-/public
+public/
 coverage
 *.local
 

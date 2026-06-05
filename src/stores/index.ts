@@ -46,6 +46,11 @@ export interface Genre {
 
 // 歌曲排序方式
 export type SortKey = "title" | "album" | "duration";
+// 播放模式：顺序播放、单曲循环、随机播放
+export type PlayMode = "sequence" | "single" | "random";
+
+/** 播放模式按此顺序循环，集中定义可避免切换逻辑出现遗漏。 */
+const PLAY_MODE_ORDER: PlayMode[] = ["sequence", "single", "random"];
 
 export const useStore = defineStore(
     "store",
@@ -72,8 +77,14 @@ export const useStore = defineStore(
         const activeGenreId = ref<number>(0);
         /** 当前播放的歌曲ID */
         const activeSongId = ref<number>(0);
+        /** 当前播放模式，默认按当前排序列表顺序播放 */
+        const playMode = ref<PlayMode>("sequence");
         /** 是否正在播放歌曲 */
         const isSongPlaying = ref<boolean>(false);
+        /** 当前音频资源是否仍在加载，用于区分“想播放”和“已经可以播放” */
+        const isAudioLoading = ref<boolean>(false);
+        /** 原生 Audio API 最近一次播放或加载错误，空字符串表示当前无错误 */
+        const audioError = ref<string>("");
         /** 提示消息的定时器ID（浏览器 window.setTimeout 返回 number），用于自动关闭提示 */
         const timeOut = ref<number>(0);
         /** 首页背景色风格 */
@@ -188,8 +199,11 @@ export const useStore = defineStore(
             }));
             const query = searchBy.value.trim().toLowerCase();
             if (query !== "") {
-                result = result.filter((song) =>
-                    song.title.toLowerCase().includes(query),
+                result = result.filter(
+                    (song) =>
+                        song.title.toLowerCase().includes(query) ||
+                        (song.albumName ?? "").toLowerCase().includes(query) ||
+                        (song.artistName ?? "").toLowerCase().includes(query),
                 );
             }
             return result.sort((a, b) => {
@@ -321,26 +335,72 @@ export const useStore = defineStore(
             return volume.value;
         }
 
-        /** 切换到下一首歌曲（基于当前排序后的列表，O(1) 索引定位），到末尾循环回第一首，返回新的歌曲ID */
-        function nextSong(): number {
+        /** 按 sequence → single → random 的顺序切换播放模式。 */
+        function togglePlayMode(): PlayMode {
+            const currentIndex = PLAY_MODE_ORDER.indexOf(playMode.value);
+            playMode.value =
+                PLAY_MODE_ORDER[(currentIndex + 1) % PLAY_MODE_ORDER.length];
+            return playMode.value;
+        }
+
+        /**
+         * 根据播放模式计算下一首歌曲ID，但不直接修改状态。
+         * 抽离选择逻辑后，按钮切歌、ended自动切歌和单元测试可以复用同一套规则。
+         */
+        function getNextSongId(): number {
             const list = songsWithAlbumName.value;
+            if (list.length === 0) return activeSongId.value;
+            if (playMode.value === "single") return activeSongId.value;
+
+            if (playMode.value === "random") {
+                const candidates = list.filter(
+                    (song) => song.id !== activeSongId.value,
+                );
+                if (candidates.length === 0) return activeSongId.value;
+                return candidates[Math.floor(Math.random() * candidates.length)]
+                    .id;
+            }
+
             const index = songIdToIndexMap.value.get(activeSongId.value);
             if (index === undefined) return activeSongId.value;
+            return list[index === list.length - 1 ? 0 : index + 1].id;
+        }
+
+        /**
+         * 根据播放模式计算上一首歌曲ID，但不直接修改状态。
+         * 与下一首共用播放模式规则，避免前进和后退行为不一致。
+         */
+        function getPrevSongId(): number {
+            const list = songsWithAlbumName.value;
+            if (list.length === 0) return activeSongId.value;
+            if (playMode.value === "single") return activeSongId.value;
+
+            if (playMode.value === "random") {
+                const candidates = list.filter(
+                    (song) => song.id !== activeSongId.value,
+                );
+                if (candidates.length === 0) return activeSongId.value;
+                return candidates[Math.floor(Math.random() * candidates.length)]
+                    .id;
+            }
+
+            const index = songIdToIndexMap.value.get(activeSongId.value);
+            if (index === undefined) return activeSongId.value;
+            return list[index === 0 ? list.length - 1 : index - 1].id;
+        }
+
+        /** 应用下一首选择结果，并重置播放进度供Audio同步层加载或重新播放。 */
+        function nextSong(): number {
             songSeconds.value = 0;
-            activeSongId.value =
-                list[index === list.length - 1 ? 0 : index + 1].id;
+            activeSongId.value = getNextSongId();
             isSongPlaying.value = false;
             return activeSongId.value;
         }
 
-        /** 切换到上一首歌曲（基于当前排序后的列表，O(1) 索引定位） */
+        /** 应用上一首选择结果，并重置播放进度供Audio同步层加载或重新播放。 */
         function prevSong(): number {
-            const list = songsWithAlbumName.value;
-            const index = songIdToIndexMap.value.get(activeSongId.value);
-            if (index === undefined) return activeSongId.value;
             songSeconds.value = 0;
-            activeSongId.value =
-                list[index === 0 ? list.length - 1 : index - 1].id;
+            activeSongId.value = getPrevSongId();
             isSongPlaying.value = false;
             return activeSongId.value;
         }
@@ -358,7 +418,10 @@ export const useStore = defineStore(
             activeAlbumId,
             activeGenreId,
             activeSongId,
+            playMode,
             isSongPlaying,
+            isAudioLoading,
+            audioError,
             timeOut,
             homePageBackground,
             songSeconds,
@@ -384,13 +447,16 @@ export const useStore = defineStore(
             alertShow,
             toggleSong,
             toggleVolume,
+            togglePlayMode,
+            getNextSongId,
+            getPrevSongId,
             nextSong,
             prevSong,
         };
     },
     {
         persist: {
-            paths: ["albums", "songs", "sortBy", "volume"],
+            paths: ["albums", "songs", "sortBy", "volume", "playMode"],
         },
     },
 );
