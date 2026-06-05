@@ -167,7 +167,7 @@ describe("Store 核心逻辑", () => {
             // 下一首应为 Hardwired(8)
             expect(nextId).toBe(8);
             expect(store.activeSongId).toBe(8);
-            expect(store.isSongPlaying).toBe(false);
+            expect(store.isSongPlaying).toBe(true);
         });
 
         it("到达列表末尾时应循环回到第一首", () => {
@@ -208,12 +208,13 @@ describe("Store 核心逻辑", () => {
             const store = useStore();
             // 按 title 排序，Hardwired(8) 的上一首是 Battery(7)
             store.activeSongId = 8;
+            store.isSongPlaying = true;
 
             const prevId = store.prevSong();
 
             expect(prevId).toBe(7);
             expect(store.activeSongId).toBe(7);
-            expect(store.isSongPlaying).toBe(false);
+            expect(store.isSongPlaying).toBe(true);
         });
 
         it("到达列表开头时应循环到最后一首", () => {

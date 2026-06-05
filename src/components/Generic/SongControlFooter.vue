@@ -24,14 +24,14 @@ const {
     togglePlayMode,
 } = store; // 方法直接解构，不需要响应性
 
-/** 播放模式按钮使用短文本，避免增加控制栏宽度并保持现有UI稳定。 */
-const playModeText = computed(() => {
-    const labels = {
-        sequence: "SEQ",
-        single: "ONE",
-        random: "RND",
+/** 播放模式使用紧凑符号，避免标签文字挤压中间控制区。 */
+const playModeIcon = computed(() => {
+    const icons = {
+        sequence: "⇄",
+        single: "🔂",
+        random: "🔀",
     };
-    return labels[playMode.value];
+    return icons[playMode.value];
 });
 
 /** 完整模式名称用于按钮title，方便用户理解短文本含义。 */
@@ -48,6 +48,10 @@ const playModeTitle = computed(() => {
 const audioElement = ref<HTMLAudioElement | null>(null);
 /** 切歌期间原生audio会触发pause，使用该标记避免把期望播放状态误改为暂停。 */
 const isChangingSong = ref(false);
+/** 拖动进度条时保存预览百分比，松手前不修改真实播放位置。 */
+const seekPreview = ref(0);
+/** 标记用户是否正在拖动进度条，避免timeupdate覆盖滑块预览位置。 */
+const isSeeking = ref(false);
 
 /**
  * 安全执行原生play。
@@ -72,11 +76,14 @@ const handleLoadedData = () => {
     const audio = audioElement.value;
     if (!audio) return;
 
+    console.log("[audio] loaded:", audio.src);
     isAudioLoading.value = false;
     isChangingSong.value = false;
     audioError.value = "";
     audio.currentTime = 0;
     songSeconds.value = 0;
+    seekPreview.value = 0;
+    isSeeking.value = false;
 
     if (isSongPlaying.value) {
         void playAudio();
@@ -86,12 +93,16 @@ const handleLoadedData = () => {
 /** 将原生播放进度换算为百分比回写Pinia，保证进度条始终反映真实播放位置。 */
 const handleTimeUpdate = () => {
     const audio = audioElement.value;
+    if (isSeeking.value) return;
+
     if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) {
         songSeconds.value = 0;
+        seekPreview.value = 0;
         return;
     }
 
     songSeconds.value = (audio.currentTime / audio.duration) * 100;
+    seekPreview.value = songSeconds.value;
 };
 
 /** 当前模式仍选择同一首歌时，主动归零并播放，因为activeSongId不会触发切歌watch。 */
@@ -101,6 +112,8 @@ const restartCurrentSong = () => {
 
     audio.currentTime = 0;
     songSeconds.value = 0;
+    seekPreview.value = 0;
+    isSeeking.value = false;
     isSongPlaying.value = true;
     void playAudio();
 };
@@ -125,7 +138,9 @@ const handleEnded = () => {
 
 /** 将原生加载错误同步到Pinia，并停止继续播放，避免UI仍显示播放中。 */
 const handleAudioError = () => {
-    const mediaError = audioElement.value?.error;
+    const audio = audioElement.value;
+    const mediaError = audio?.error;
+    console.warn("[audio] load failed:", audio?.src, mediaError);
     audioError.value = mediaError
         ? `Audio error code: ${mediaError.code}`
         : "Audio loading failed";
@@ -166,16 +181,26 @@ const nextSongPlay = () => {
     applySongSelection(nextSong);
 };
 
-/** 拖动进度条时把Pinia中的百分比换算为秒并同步到原生audio。 */
-const handleSeek = () => {
+/** 拖动时只更新滑块预览，不连续修改audio.currentTime，避免产生声音撕裂。 */
+const handleSeekInput = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    seekPreview.value = Number(target.value);
+    isSeeking.value = true;
+};
+
+/** 松手或键盘确认后一次性提交播放位置，并同步Pinia进度。 */
+const commitSeek = () => {
     const audio = audioElement.value;
     if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) {
+        isSeeking.value = false;
         return;
     }
 
-    const progress = Math.min(100, Math.max(0, songSeconds.value));
+    const progress = Math.min(100, Math.max(0, seekPreview.value));
     audio.currentTime = (progress / 100) * audio.duration;
     songSeconds.value = progress;
+    seekPreview.value = progress;
+    isSeeking.value = false;
 };
 
 // activeSongId变化代表切歌：先暂停和清零，等待Vue更新src后再主动加载新资源。
@@ -189,6 +214,8 @@ watch(
         isAudioLoading.value = true;
         audioError.value = "";
         songSeconds.value = 0;
+        seekPreview.value = 0;
+        isSeeking.value = false;
         audio.pause();
         audio.currentTime = 0;
 
@@ -240,7 +267,7 @@ onMounted(() => {
         <audio
             id="audio"
             ref="audioElement"
-            :src="'songs/' + activeSong.songPath"
+            :src="`/songs/${activeSong.songPath}`"
             preload="auto"
             @loadeddata="handleLoadedData"
             @timeupdate="handleTimeUpdate"
@@ -252,14 +279,14 @@ onMounted(() => {
             <p>Your browser does not support the <code>audio</code> element.</p>
         </audio>
         <div
-            class="fixed bottom-0 left-0 z-30 grid w-screen grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 border-t-2 border-gray-lightest bg-gray-dark px-3 pb-3 pt-2 xs:flex xs:flex-row xs:justify-around xs:px-8 xs:py-3 sm:px-20"
+            class="fixed bottom-0 left-0 z-30 grid min-h-[7.5rem] w-screen grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 border-t-2 border-gray-lightest bg-gray-dark px-3 pb-3 pt-2 xs:h-24 xs:min-h-0 xs:grid-cols-[minmax(0,30%)_minmax(0,40%)_minmax(0,30%)] xs:gap-0 xs:px-6 xs:py-2"
         >
             <div
-                class="flex min-w-0 flex-row items-center xs:mr-auto xs:basis-1/4"
+                class="flex min-w-0 flex-row items-center xs:pr-3"
             >
                 <img
                     class="h-12 w-12 shrink-0 rounded-sm object-cover xs:h-16 xs:w-16"
-                    :src="'album-covers/' + activeSong.imgPath"
+                    :src="`/album-covers/${activeSong.imgPath}`"
                     alt=""
                 />
                 <div class="ml-2 flex min-w-0 flex-col">
@@ -298,18 +325,18 @@ onMounted(() => {
                 />
             </button>
             <div
-                class="col-span-2 flex min-w-0 flex-col items-center xs:col-auto xs:basis-1/2"
+                class="col-span-2 flex min-w-0 flex-col items-center justify-center xs:col-auto"
             >
                 <div
-                    class="flex h-11 w-full max-w-xs flex-row items-center justify-center gap-4 xs:max-w-none xs:justify-evenly xs:gap-0"
+                    class="flex h-11 w-full max-w-xs flex-row items-center justify-center gap-4 xs:max-w-md xs:gap-2"
                 >
                     <button
                         @click="togglePlayMode"
                         :title="playModeTitle"
                         :aria-label="`Play mode: ${playModeTitle}`"
-                        class="flex h-11 min-w-[2.75rem] items-center justify-center text-xs font-bold text-gray-300 hover:text-white"
+                        class="flex h-11 w-11 shrink-0 items-center justify-center text-xl text-gray-300 hover:text-white"
                     >
-                        {{ playModeText }}
+                        {{ playModeIcon }}
                     </button>
                     <button
                         @click="prevSongPlay"
@@ -335,7 +362,7 @@ onMounted(() => {
                     </button>
                     <button
                         @click="nextSongPlay"
-                        class="flex h-11 w-11 items-center justify-center"
+                        class="flex h-11 w-11 shrink-0 items-center justify-center"
                         aria-label="Next song"
                     >
                         <img
@@ -344,19 +371,24 @@ onMounted(() => {
                             class="h-8 w-8 p-1"
                         />
                     </button>
+                    <span
+                        class="hidden h-11 w-11 shrink-0 xs:block"
+                        aria-hidden="true"
+                    ></span>
                 </div>
                 <input
                     type="range"
-                    class="touch-slider h-6 w-full cursor-pointer appearance-none rounded bg-transparent accent-gray-300 outline-none hover:accent-primary-normal xs:mt-1 xs:w-3/4"
+                    class="touch-slider h-6 w-full max-w-md cursor-pointer appearance-none rounded bg-transparent accent-gray-300 outline-none hover:accent-primary-normal xs:mt-1"
                     min="0"
                     max="100"
                     step=".01"
-                    @input="handleSeek"
-                    v-model.number="songSeconds"
+                    :value="seekPreview"
+                    @input="handleSeekInput"
+                    @change="commitSeek"
                 />
             </div>
             <div
-                class="ml-auto my-auto hidden basis-1/4 flex-row items-center justify-end xs:flex"
+                class="my-auto hidden min-w-0 flex-row items-center justify-end xs:flex"
             >
                 <button
                     @click="toggleVolumePlay"
@@ -371,7 +403,7 @@ onMounted(() => {
                 </button>
                 <input
                     type="range"
-                    class="touch-slider h-6 w-1/2 cursor-pointer appearance-none rounded bg-transparent text-right accent-gray-300 outline-none hover:accent-primary-normal"
+                    class="touch-slider h-6 w-full max-w-40 cursor-pointer appearance-none rounded bg-transparent text-right accent-gray-300 outline-none hover:accent-primary-normal"
                     min="0"
                     max="100"
                     step="0.01"

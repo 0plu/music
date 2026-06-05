@@ -393,7 +393,6 @@ export const useStore = defineStore(
         function nextSong(): number {
             songSeconds.value = 0;
             activeSongId.value = getNextSongId();
-            isSongPlaying.value = false;
             return activeSongId.value;
         }
 
@@ -401,7 +400,6 @@ export const useStore = defineStore(
         function prevSong(): number {
             songSeconds.value = 0;
             activeSongId.value = getPrevSongId();
-            isSongPlaying.value = false;
             return activeSongId.value;
         }
 
